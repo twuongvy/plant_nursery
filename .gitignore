@@ -1,0 +1,25 @@
+# Dependencies & build
+**/node_modules/
+**/dist/
+**/bin/
+**/obj/
+**/artifacts/
+
+# Env & local secrets
+.env
+.env.*
+!.env.example
+**/appsettings.*.local.json
+**/secrets.json
+
+# IDE / OS
+.vs/
+.idea/
+*.user
+*.suo
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+**/logs/

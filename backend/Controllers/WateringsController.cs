@@ -25,7 +25,7 @@ public class WateringsController : ControllerBase
         _watering = watering;
     }
 
-    [HttpGet]
+    [HttpGet(Name = nameof(GetAllAsync))]
     public async Task<ActionResult<IEnumerable<WateringLogDto>>> GetAllAsync([FromQuery] int? batchId, CancellationToken ct)
     {
         var query = _db.WateringLogs
@@ -109,7 +109,7 @@ public class WateringsController : ControllerBase
             .Include(log => log.WateredByUser)
             .FirstAsync(log => log.Id == entity.Id, ct);
 
-        return CreatedAtAction(nameof(GetAllAsync), new { batchId = created.BatchId }, ToDto(created));
+        return CreatedAtRoute(nameof(GetAllAsync), new { batchId = created.BatchId }, ToDto(created));
     }
 
     private static WateringLogDto ToDto(WateringLog log) =>

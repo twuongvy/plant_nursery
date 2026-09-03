@@ -35,7 +35,7 @@ public class BatchesController : ControllerBase
         return Ok(batches.Select(MapBatch).ToList());
     }
 
-    [HttpGet("{id:int}")]
+    [HttpGet("{id:int}", Name = nameof(GetByIdAsync))]
     public async Task<ActionResult<BatchDto>> GetByIdAsync(int id, CancellationToken ct)
     {
         var batch = await LoadBatchesQuery().FirstOrDefaultAsync(b => b.Id == id, ct);
@@ -80,7 +80,7 @@ public class BatchesController : ControllerBase
         await _db.SaveChangesAsync(ct);
 
         var created = await LoadBatchesQuery().FirstAsync(b => b.Id == entity.Id, ct);
-        return CreatedAtAction(nameof(GetByIdAsync), new { id = entity.Id }, MapBatch(created));
+        return CreatedAtRoute(nameof(GetByIdAsync), new { id = entity.Id }, MapBatch(created));
     }
 
     [HttpPut("{id:int}")]

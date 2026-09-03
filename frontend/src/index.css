@@ -52,8 +52,13 @@
   }
 
   body {
-    @apply m-0 bg-background text-foreground font-sans;
+    @apply m-0 h-full overflow-hidden bg-background text-foreground font-sans;
     line-height: 1.4;
+  }
+
+  html,
+  #root {
+    @apply h-full overflow-hidden;
   }
 
   a {
@@ -85,7 +90,7 @@
 
 @layer components {
   .app-shell {
-    @apply flex min-h-screen flex-col;
+    @apply flex h-full flex-col overflow-hidden;
   }
 
   .topbar {
@@ -113,19 +118,7 @@
   }
 
   .page {
-    @apply mx-auto w-full max-w-[1100px] flex-1 p-5;
-  }
-
-  .footer {
-    @apply border-t border-border px-5 py-2 text-[0.85rem] text-muted-foreground;
-  }
-
-  .muted {
-    @apply mt-0 text-muted-foreground;
-  }
-
-  .hint {
-    @apply mt-2 text-[0.85rem] text-muted-foreground;
+    @apply mx-auto min-h-0 w-full max-w-[1100px] flex-1 overflow-hidden p-5;
   }
 
   .panel {
@@ -189,6 +182,18 @@
 
   .data-table th {
     @apply bg-secondary text-[0.85rem];
+  }
+
+  .table-body-scroll {
+    @apply h-full min-h-0 overflow-y-auto;
+  }
+
+  .table-body-scroll .data-table {
+    @apply border-separate border-spacing-0;
+  }
+
+  .table-body-scroll .data-table thead th {
+    @apply sticky top-0 z-10 bg-secondary;
   }
 
   .row-overdue {

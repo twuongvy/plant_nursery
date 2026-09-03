@@ -35,8 +35,8 @@ public class SpeciesController : ControllerBase
         return Ok(speciesList);
     }
 
-    [HttpGet("{id:int}")]
-    public async Task<ActionResult<PlantSpeciesDto>> GetByIdAsync(int id, CancellationToken ct)
+    [HttpGet("{id:int}", Name = nameof(GetSpeciesByIdAsync))]
+    public async Task<ActionResult<PlantSpeciesDto>> GetSpeciesByIdAsync(int id, CancellationToken ct)
     {
         var species = await _db.PlantSpecies.AsNoTracking().FirstOrDefaultAsync(row => row.Id == id, ct);
         if (species is null) return NotFound();
@@ -62,7 +62,7 @@ public class SpeciesController : ControllerBase
         _db.PlantSpecies.Add(entity);
         await _db.SaveChangesAsync(ct);
 
-        return CreatedAtAction(nameof(GetByIdAsync), new { id = entity.Id }, ToDto(entity));
+        return CreatedAtRoute(nameof(GetSpeciesByIdAsync), new { id = entity.Id }, ToDto(entity));
     }
 
     [HttpPut("{id:int}")]

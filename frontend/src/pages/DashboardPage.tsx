@@ -1,12 +1,12 @@
-import { Link } from 'react-router-dom'
-import { ErrorBanner } from '../components/ErrorBanner'
-import { useDashboard } from '../hooks/useDashboard'
+import { Link } from "react-router-dom";
+import { ErrorBanner } from "../components/ErrorBanner";
+import { useDashboard } from "../hooks/useDashboard";
 
 export function DashboardPage() {
-  const { summary, error, isLoading } = useDashboard()
+  const { summary, error, isLoading } = useDashboard();
 
   return (
-    <div>
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <h1>Dashboard</h1>
       <p className="muted">Summary of watering risk and sale readiness.</p>
       <ErrorBanner message={error} />
@@ -32,5 +32,5 @@ export function DashboardPage() {
         </div>
       )}
     </div>
-  )
+  );
 }

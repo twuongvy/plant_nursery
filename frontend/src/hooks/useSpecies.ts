@@ -1,76 +1,86 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from "react";
 import {
   createSpecies,
   deleteSpecies,
   listSpecies,
   updateSpecies,
-} from '../api/species'
-import type { PlantSpecies, SpeciesInput } from '../types'
-import { runApi } from './api'
+} from "../api/species";
+import type { PlantSpecies, SpeciesInput } from "../types";
+import { runApi } from "./api";
 
 export function useSpecies(options?: { enabled?: boolean }) {
-  const enabled = options?.enabled ?? true
-  const [speciesList, setSpeciesList] = useState<PlantSpecies[]>([])
-  const [error, setError] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(enabled)
-  const [isSaving, setIsSaving] = useState(false)
-  const [isDeleting, setIsDeleting] = useState(false)
+  const enabled = options?.enabled ?? true;
+  const [speciesList, setSpeciesList] = useState<PlantSpecies[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(enabled);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const reload = useCallback(async () => {
-    if (!enabled) return
-    setIsLoading(true)
-    setError(null)
-    const result = await runApi(listSpecies, 'Failed to load species.')
+    if (!enabled) return;
+    setIsLoading(true);
+    setError(null);
+    const result = await runApi(listSpecies, "Failed to load species.");
     if (!result.ok) {
-      setError(result.error)
+      setError(result.error);
     } else {
-      setSpeciesList(result.data)
+      setSpeciesList(result.data);
     }
-    setIsLoading(false)
-  }, [enabled])
+    setIsLoading(false);
+  }, [enabled]);
 
   useEffect(() => {
-    void reload()
-  }, [reload])
+    void reload();
+  }, [reload]);
 
   async function saveSpecies(
     payload: SpeciesInput,
     speciesId?: number,
   ): Promise<boolean> {
-    setIsSaving(true)
-    setError(null)
+    setIsSaving(true);
+    setError(null);
     const result = await runApi(
       () =>
         speciesId != null
           ? updateSpecies(speciesId, payload)
           : createSpecies(payload),
-      'Save failed.',
-    )
-    if (!result.ok) {
-      setError(result.error)
-      setIsSaving(false)
-      return false
+      "Save failed.",
+    );
+    if (result.ok) {
+      setSpeciesList((prev) => {
+        if (speciesId != null) {
+          // Update existing species in place
+          return prev.map((batch) =>
+            batch.id === speciesId ? result.data : batch,
+          );
+        } else {
+          // Add new batch to the top
+          return [...prev, result.data];
+        }
+      });
+    } else {
+      setError(result.error);
+      setIsSaving(false);
     }
-    await reload()
-    setIsSaving(false)
-    return true
+    setIsSaving(false);
+    return true;
   }
 
   async function removeSpecies(speciesId: number): Promise<boolean> {
-    setIsDeleting(true)
-    setError(null)
+    setIsDeleting(true);
+    setError(null);
     const result = await runApi(
       () => deleteSpecies(speciesId),
-      'Delete failed.',
-    )
+      "Delete failed.",
+    );
     if (!result.ok) {
-      setError(result.error)
-      setIsDeleting(false)
-      return false
+      setError(result.error);
+      setIsDeleting(false);
+      return false;
     }
-    await reload()
-    setIsDeleting(false)
-    return true
+    await reload();
+    setIsDeleting(false);
+    return true;
   }
 
   return {
@@ -81,5 +91,5 @@ export function useSpecies(options?: { enabled?: boolean }) {
     isDeleting,
     saveSpecies,
     removeSpecies,
-  }
+  };
 }

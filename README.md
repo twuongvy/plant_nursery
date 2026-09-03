@@ -55,31 +55,39 @@ dotnet restore
 dotnet run --launch-profile http
 ```
 
-- HTTP: **http://localhost:5247** (Swagger at `/swagger`)
-- HTTPS profile: **https://localhost:7031**
+- HTTP: **[http://localhost:5247](http://localhost:5247)** (Swagger at `/swagger`)
+- HTTPS profile: **[https://localhost:7031](https://localhost:7031)**
 - CORS allows Vite origin `http://localhost:5173` in Development
 
 **Seed accounts:**
 
-| Email | Password | Role |
-| --- | --- | --- |
+
+| Email                 | Password    | Role  |
+| --------------------- | ----------- | ----- |
 | `admin@nursery.local` | `Admin123!` | Admin |
-| `staff@nursery.local` | `Staff123!` | User |
+| `staff@nursery.local` | `Staff123!` | User  |
+
+
+
 
 ### Main API routes
 
-| Method | Path | Roles |
-| --- | --- | --- |
-| POST | `/api/auth/login` | anonymous |
-| GET/POST/PUT/DELETE | `/api/species` | GET any auth; mutations Admin |
-| GET/POST/PUT/DELETE | `/api/batches` | GET any auth; create/update/delete Admin |
-| PATCH | `/api/batches/{id}/health` | Admin, User |
-| POST | `/api/batches/{id}/mark-for-sale` | Admin (only if sale-ready) |
-| GET | `/api/waterings/due` | Admin, User |
-| POST | `/api/waterings` | Admin, User |
-| GET | `/api/dashboard` | Admin, User (summary counts) |
-| GET | `/api/dashboard/summary` | due list + readiness counts |
-| GET | `/api/dashboard/readiness` | per-batch readiness rules |
+
+| Method              | Path                              | Roles                                    |
+| ------------------- | --------------------------------- | ---------------------------------------- |
+| POST                | `/api/auth/login`                 | anonymous                                |
+| GET/POST/PUT/DELETE | `/api/species`                    | GET any auth; mutations Admin            |
+| GET/POST/PUT/DELETE | `/api/batches`                    | GET any auth; create/update/delete Admin |
+| PATCH               | `/api/batches/{id}/health`        | Admin, User                              |
+| POST                | `/api/batches/{id}/mark-for-sale` | Admin (only if sale-ready)               |
+| GET                 | `/api/waterings/due`              | Admin, User                              |
+| POST                | `/api/waterings`                  | Admin, User                              |
+| GET                 | `/api/dashboard`                  | Admin, User (summary counts)             |
+| GET                 | `/api/dashboard/summary`          | due list + readiness counts              |
+| GET                 | `/api/dashboard/readiness`        | per-batch readiness rules                |
+
+
+
 
 ## Frontend (React)
 
@@ -89,7 +97,7 @@ npm install
 npm run dev
 ```
 
-Open **http://localhost:5173**.
+Open **[http://localhost:5173](http://localhost:5173)**.
 
 API base URL is set via Vite env:
 
@@ -106,13 +114,17 @@ If you run the API on another port (e.g. `5080` or `7031`), update `VITE_API_URL
 
 ### UI pages
 
-| Route | Who | Purpose |
-| --- | --- | --- |
-| `/login` | all | JWT login; stores token + role |
-| `/` | auth | Dashboard summary counts |
-| `/species` | Admin | Species CRUD |
-| `/batches` | auth | Batches + readiness badge; Admin create/edit / mark ForSale |
-| `/watering` | auth | Due/overdue queue + record watering |
+
+| Route       | Who   | Purpose                                                     |
+| ----------- | ----- | ----------------------------------------------------------- |
+| `/login`    | all   | JWT login; stores token + role                              |
+| `/`         | auth  | Dashboard summary counts                                    |
+| `/species`  | Admin | Species CRUD                                                |
+| `/batches`  | auth  | Batches + readiness badge; Admin create/edit / mark ForSale |
+| `/watering` | auth  | Due/overdue queue + record watering                         |
+
+
+
 
 ### Assumed API contract
 
@@ -122,12 +134,16 @@ If you run the API on another port (e.g. `5080` or `7031`), update `VITE_API_URL
 - `GET /api/waterings/due`, `POST /api/waterings`
 - `GET /api/dashboard` → `{ overdueWaterings, saleReadyBatches, growingBatches }`
 
+
+
 ## Quick start order
 
 1. Start MySQL, create DB `plant_nursery`, set connection string password.
 2. Run API (`dotnet run --launch-profile http` in `backend/`) — migrates + seeds on start.
 3. Run frontend (`npm run dev` in `frontend/`).
 4. Log in as admin or staff and exercise watering + readiness flows.
+
+
 
 ## Sale readiness (server rules)
 
@@ -137,3 +153,4 @@ A batch is sale-ready when **all** are true:
 2. `HealthStatus == Healthy`
 3. Watering is not overdue (last watering within interval, or planted recently and not yet due)
 4. `Status` is `Growing` or `ForSale` (not `SoldOut`)
+

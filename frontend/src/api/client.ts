@@ -1,11 +1,13 @@
 import type { ApiErrorBody } from '../types'
 
-const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '')
-  || 'http://localhost:5247'
+const API_BASE =
+  import.meta.env.VITE_API_URL?.replace(/\/$/, '') || 'http://localhost:5247'
 
 const TOKEN_KEY = 'nursery_token'
 const ROLE_KEY = 'nursery_role'
 const EMAIL_KEY = 'nursery_email'
+
+const AUTH_LOGOUT_EVENT = 'nursery:auth-logout'
 
 export function getApiBaseUrl(): string {
   return API_BASE
@@ -35,6 +37,16 @@ export function clearAuthSession(): void {
   localStorage.removeItem(EMAIL_KEY)
 }
 
+export function subscribeAuthLogout(handler: () => void): () => void {
+  window.addEventListener(AUTH_LOGOUT_EVENT, handler)
+  return () => window.removeEventListener(AUTH_LOGOUT_EVENT, handler)
+}
+
+function emitAuthLogout(): void {
+  clearAuthSession()
+  window.dispatchEvent(new Event(AUTH_LOGOUT_EVENT))
+}
+
 export class ApiError extends Error {
   status: number
   body: ApiErrorBody | null
@@ -49,16 +61,22 @@ export class ApiError extends Error {
 
 function messageFromBody(body: ApiErrorBody | null, fallback: string): string {
   if (!body) return fallback
-  if (body.message) return body.message
+  const rules =
+    body.failedRules && body.failedRules.length > 0
+      ? body.failedRules.join('; ')
+      : ''
+  if (body.message) {
+    return rules ? `${body.message} ${rules}` : body.message
+  }
   if (body.detail) return body.detail
   if (body.title) return body.title
   if (body.errors) {
-    const parts = Object.entries(body.errors).flatMap(([key, msgs]) =>
-      (msgs as string[]).map((m) => `${key}: ${m}`),
+    const parts = Object.entries(body.errors).flatMap(([field, messages]) =>
+      messages.map((message) => `${field}: ${message}`),
     )
     if (parts.length) return parts.join('; ')
   }
-  return fallback
+  return rules || fallback
 }
 
 export async function apiFetch<T>(
@@ -95,6 +113,9 @@ export async function apiFetch<T>(
   }
 
   if (!response.ok) {
+    if (response.status === 401 && !path.startsWith('/api/auth/login')) {
+      emitAuthLogout()
+    }
     const body = (parsed as ApiErrorBody | null) ?? null
     throw new ApiError(
       response.status,

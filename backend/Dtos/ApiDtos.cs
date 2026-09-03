@@ -13,6 +13,12 @@ public record LoginResponse(
     string Role,
     DateTime ExpiresAtUtc);
 
+public record MeResponse(
+    int Id,
+    string Email,
+    string Username,
+    string Role);
+
 public record PlantSpeciesDto(
     int Id,
     string Name,
@@ -20,13 +26,7 @@ public record PlantSpeciesDto(
     int WateringIntervalDays,
     int MinDaysBeforeSale);
 
-public record CreatePlantSpeciesRequest(
-    [Required, MaxLength(150)] string Name,
-    [MaxLength(200)] string? ScientificName,
-    [Range(1, 365)] int WateringIntervalDays,
-    [Range(0, 3650)] int MinDaysBeforeSale);
-
-public record UpdatePlantSpeciesRequest(
+public record PlantSpeciesWriteRequest(
     [Required, MaxLength(150)] string Name,
     [MaxLength(200)] string? ScientificName,
     [Range(1, 365)] int WateringIntervalDays,
@@ -105,3 +105,17 @@ public record DashboardDetailDto(
     int GrowingCount,
     int ForSaleCount,
     IReadOnlyList<WateringDueItemDto> DueWaterings);
+
+public record BatchReadinessDto(
+    int BatchId,
+    bool IsReady,
+    IReadOnlyList<string> FailedRules);
+
+public record DashboardReadinessItemDto(
+    int BatchId,
+    string SpeciesName,
+    string? Location,
+    string Status,
+    string HealthStatus,
+    bool IsSaleReady,
+    IReadOnlyList<string> FailedRules);

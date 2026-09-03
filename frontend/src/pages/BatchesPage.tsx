@@ -1,143 +1,124 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from "react";
+import { useAuth } from "../auth/AuthContext";
+import { Badge } from "../components/Badge";
+import { Button } from "../components/Button";
+import { ErrorBanner } from "../components/ErrorBanner";
 import {
-  createBatch,
-  listBatches,
-  markBatchForSale,
-  updateBatch,
-} from '../api/batches'
-import { listSpecies } from '../api/species'
-import { ApiError } from '../api/client'
-import { useAuth } from '../auth/AuthContext'
-import { Badge } from '../components/Badge'
-import { ErrorBanner } from '../components/ErrorBanner'
-import type {
-  Batch,
-  BatchInput,
-  BatchStatus,
-  HealthStatus,
-  PlantSpecies,
-} from '../types'
+  EditIcon,
+  ForSaleIcon,
+  IconButton,
+} from "../components/IconButton";
+import { NumericInput } from "../components/NumericInput";
+import { useBatches } from "../hooks/useBatches";
+import { useSpecies } from "../hooks/useSpecies";
+import {
+  HEALTH_STATUSES,
+  isBatchStatus,
+  isHealthStatus,
+  type Batch,
+  type BatchInput,
+  type BatchStatus,
+  type HealthStatus,
+} from "../types";
+import { todayLocalIsoDate } from "../utils/date";
 
-const today = () => new Date().toISOString().slice(0, 10)
+type BatchForm = {
+  plantSpeciesId: number;
+  quantity: number | "";
+  plantedAt: string;
+  healthStatus: HealthStatus;
+  location: string;
+  status: BatchStatus;
+};
+
+function emptyForm(speciesId = 0): BatchForm {
+  return {
+    plantSpeciesId: speciesId,
+    quantity: 10,
+    plantedAt: todayLocalIsoDate(),
+    healthStatus: "Healthy",
+    location: "",
+    status: "Growing",
+  };
+}
 
 function readinessBadge(batch: Batch) {
-  if (batch.status === 'SoldOut') {
-    return <Badge tone="neutral">Sold out</Badge>
+  if (batch.status === "SoldOut") {
+    return <Badge tone="neutral">Sold out</Badge>;
   }
-  if (batch.status === 'ForSale') {
-    return <Badge tone="info">For sale</Badge>
+  if (batch.status === "ForSale") {
+    return (
+      <Badge tone={batch.isSaleReady ? "info" : "warn"}>For sale</Badge>
+    );
   }
   if (batch.isSaleReady) {
-    return <Badge tone="ok">Ready</Badge>
+    return <Badge tone="ok">Ready</Badge>;
   }
-  return <Badge tone="warn">Not ready</Badge>
+  return <Badge tone="warn">Not ready</Badge>;
 }
 
 export function BatchesPage() {
-  const { isAdmin } = useAuth()
-  const [batches, setBatches] = useState<Batch[]>([])
-  const [species, setSpecies] = useState<PlantSpecies[]>([])
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [busy, setBusy] = useState(false)
-  const [editingId, setEditingId] = useState<number | null>(null)
-  const [form, setForm] = useState<BatchInput>({
-    plantSpeciesId: 0,
-    quantity: 10,
-    plantedAt: today(),
-    healthStatus: 'Healthy',
-    location: '',
-    status: 'Growing',
-  })
+  const { isAdmin } = useAuth();
+  const {
+    batches,
+    error,
+    isLoading: isBatchesLoading,
+    isSaving,
+    markingForSaleId,
+    updatingHealthId,
+    saveBatch,
+    markForSale,
+    updateHealth,
+  } = useBatches();
+  const { speciesList, error: speciesError, isLoading: isSpeciesLoading } =
+    useSpecies({ enabled: isAdmin });
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [form, setForm] = useState<BatchForm>(emptyForm());
+  const [formError, setFormError] = useState<string | null>(null);
 
-  async function reload() {
-    setLoading(true)
-    setError(null)
-    try {
-      const batchList = await listBatches()
-      setBatches(batchList)
-      if (isAdmin) {
-        const speciesList = await listSpecies()
-        setSpecies(speciesList)
-        setForm((prev) => ({
-          ...prev,
-          plantSpeciesId: prev.plantSpeciesId || speciesList[0]?.id || 0,
-        }))
-      }
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to load batches.')
-    } finally {
-      setLoading(false)
-    }
-  }
+  const isLoading = isBatchesLoading || isSpeciesLoading;
+  const bannerError = formError ?? error ?? speciesError;
+  const selectedSpeciesId = form.plantSpeciesId || speciesList[0]?.id || 0;
 
-  useEffect(() => {
-    void reload()
-  }, [isAdmin])
-
-  function startEdit(batch: Batch) {
-    setEditingId(batch.id)
+  function handleStartEdit(batch: Batch) {
+    setEditingId(batch.id);
     setForm({
       plantSpeciesId: batch.plantSpeciesId,
       quantity: batch.quantity,
       plantedAt: batch.plantedAt.slice(0, 10),
       healthStatus: batch.healthStatus,
-      location: batch.location ?? '',
+      location: batch.location ?? "",
       status: batch.status,
-    })
+    });
   }
 
-  function resetForm() {
-    setEditingId(null)
-    setForm({
-      plantSpeciesId: species[0]?.id || 0,
-      quantity: 10,
-      plantedAt: today(),
-      healthStatus: 'Healthy',
-      location: '',
-      status: 'Growing',
-    })
+  function handleResetForm() {
+    setEditingId(null);
+    setForm(emptyForm(speciesList[0]?.id || 0));
   }
 
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault()
-    if (!isAdmin) return
-    setBusy(true)
-    setError(null)
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (!isAdmin) return;
+    const quantity = typeof form.quantity === "number" ? form.quantity : null;
+    if (quantity == null || quantity < 1) {
+      setFormError("Quantity must be a whole number of at least 1.");
+      return;
+    }
+    setFormError(null);
     const payload: BatchInput = {
-      plantSpeciesId: Number(form.plantSpeciesId),
-      quantity: Number(form.quantity),
+      plantSpeciesId: Number(selectedSpeciesId),
+      quantity,
       plantedAt: form.plantedAt,
       healthStatus: form.healthStatus,
-      location: form.location?.trim() || null,
-      status: form.status,
+      location: form.location.trim() || null,
+    };
+    if (editingId != null) {
+      payload.status = form.status;
     }
-    try {
-      if (editingId != null) {
-        await updateBatch(editingId, payload)
-      } else {
-        await createBatch(payload)
-      }
-      resetForm()
-      await reload()
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Save failed.')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function onMarkForSale(id: number) {
-    setError(null)
-    try {
-      await markBatchForSale(id)
-      await reload()
-    } catch (err) {
-      setError(
-        err instanceof ApiError
-          ? err.message
-          : 'Could not mark for sale (must be sale-ready).',
-      )
+    const didSave = await saveBatch(payload, editingId ?? undefined);
+    if (didSave) {
+      handleResetForm();
     }
   }
 
@@ -146,36 +127,39 @@ export function BatchesPage() {
       <h1>Batches</h1>
       <p className="muted">
         Readiness is calculated on the server (age, health, watering, status).
+        Mark for sale is the only way to set ForSale.
       </p>
-      <ErrorBanner message={error} />
+      <ErrorBanner message={bannerError} />
 
       {isAdmin && (
-        <form className="panel form-grid" onSubmit={onSubmit}>
-          <h2>{editingId != null ? `Edit batch #${editingId}` : 'Create batch'}</h2>
+        <form className="panel form-grid" onSubmit={handleSubmit}>
+          <h2>
+            {editingId != null ? `Edit batch #${editingId}` : "Create batch"}
+          </h2>
           <label>
             Species
             <select
-              value={form.plantSpeciesId}
+              value={selectedSpeciesId}
               onChange={(e) =>
                 setForm({ ...form, plantSpeciesId: Number(e.target.value) })
               }
               required
             >
-              {species.length === 0 && <option value={0}>No species</option>}
-              {species.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
+              {speciesList.length === 0 && <option value={0}>No species</option>}
+              {speciesList.map((species) => (
+                <option key={species.id} value={species.id}>
+                  {species.name}
                 </option>
               ))}
             </select>
           </label>
           <label>
             Quantity
-            <input
-              type="number"
-              min={1}
-              value={form.quantity}
-              onChange={(e) => setForm({ ...form, quantity: Number(e.target.value) })}
+            <NumericInput
+              value={form.quantity === "" ? null : form.quantity}
+              onChange={(quantity) =>
+                setForm({ ...form, quantity: quantity ?? "" })
+              }
               required
             />
           </label>
@@ -183,6 +167,7 @@ export function BatchesPage() {
             Planted at
             <input
               type="date"
+              max={todayLocalIsoDate()}
               value={form.plantedAt}
               onChange={(e) => setForm({ ...form, plantedAt: e.target.value })}
               required
@@ -192,53 +177,55 @@ export function BatchesPage() {
             Health
             <select
               value={form.healthStatus}
-              onChange={(e) =>
-                setForm({ ...form, healthStatus: e.target.value as HealthStatus })
-              }
+              onChange={(e) => {
+                if (!isHealthStatus(e.target.value)) return
+                setForm({ ...form, healthStatus: e.target.value })
+              }}
             >
-              <option value="Healthy">Healthy</option>
-              <option value="Sick">Sick</option>
-              <option value="Quarantine">Quarantine</option>
+              {HEALTH_STATUSES.map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
             </select>
           </label>
-          <label>
-            Status
-            <select
-              value={form.status}
-              onChange={(e) =>
-                setForm({ ...form, status: e.target.value as BatchStatus })
-              }
-            >
-              <option value="Growing">Growing</option>
-              <option value="ForSale">ForSale</option>
-              <option value="SoldOut">SoldOut</option>
-            </select>
-          </label>
+          {editingId != null && (
+            <label>
+              Status
+              <select
+                value={form.status}
+                onChange={(e) => {
+                  if (!isBatchStatus(e.target.value)) return
+                  setForm({ ...form, status: e.target.value })
+                }}
+              >
+                <option value="Growing">Growing</option>
+                {form.status === "ForSale" && (
+                  <option value="ForSale">ForSale</option>
+                )}
+                <option value="SoldOut">SoldOut</option>
+              </select>
+            </label>
+          )}
           <label>
             Location / label
             <input
-              value={form.location ?? ''}
+              value={form.location}
               onChange={(e) => setForm({ ...form, location: e.target.value })}
             />
           </label>
           <div className="form-actions">
-            <button
-              type="submit"
-              className="btn"
-              disabled={busy || species.length === 0}
-            >
-              {busy ? 'Saving…' : editingId != null ? 'Update' : 'Create'}
-            </button>
-            {editingId != null && (
-              <button type="button" className="btn btn-secondary" onClick={resetForm}>
-                Cancel
-              </button>
-            )}
+            <Button type="submit" disabled={isSaving || speciesList.length === 0}>
+              {isSaving ? "Saving…" : editingId != null ? "Update" : "Create"}
+            </Button>
+            <Button type="button" variant="outline" onClick={handleResetForm}>
+              Cancel
+            </Button>
           </div>
         </form>
       )}
 
-      {loading ? (
+      {isLoading ? (
         <p>Loading…</p>
       ) : (
         <table className="data-table">
@@ -261,40 +248,63 @@ export function BatchesPage() {
                 <td colSpan={9}>No batches yet.</td>
               </tr>
             ) : (
-              batches.map((b) => (
-                <tr key={b.id}>
-                  <td>{b.id}</td>
-                  <td>{b.speciesName || `#${b.plantSpeciesId}`}</td>
-                  <td>{b.quantity}</td>
-                  <td>{b.plantedAt.slice(0, 10)}</td>
-                  <td>{b.healthStatus}</td>
-                  <td>{b.status}</td>
-                  <td>{b.location || '—'}</td>
+              batches.map((batch) => (
+                <tr key={batch.id}>
+                  <td>{batch.id}</td>
+                  <td>{batch.speciesName || `#${batch.plantSpeciesId}`}</td>
+                  <td>{batch.quantity}</td>
+                  <td>{batch.plantedAt.slice(0, 10)}</td>
                   <td>
-                    {readinessBadge(b)}
-                    {b.readinessNotes && b.readinessNotes.length > 0 && (
-                      <div className="hint">{b.readinessNotes.join('; ')}</div>
+                    {isAdmin ? (
+                      batch.healthStatus
+                    ) : (
+                      <select
+                        value={batch.healthStatus}
+                        disabled={updatingHealthId === batch.id}
+                        onChange={(e) => {
+                          if (!isHealthStatus(e.target.value)) return
+                          void updateHealth(batch.id, e.target.value)
+                        }}
+                      >
+                        {HEALTH_STATUSES.map((status) => (
+                          <option key={status} value={status}>
+                            {status}
+                          </option>
+                        ))}
+                      </select>
                     )}
                   </td>
-                  <td className="row-actions">
-                    {isAdmin && (
-                      <button
-                        type="button"
-                        className="btn btn-small"
-                        onClick={() => startEdit(b)}
-                      >
-                        Edit
-                      </button>
+                  <td>{batch.status}</td>
+                  <td>{batch.location || "—"}</td>
+                  <td>
+                    {readinessBadge(batch)}
+                    {batch.readinessNotes && batch.readinessNotes.length > 0 && (
+                      <div className="hint">{batch.readinessNotes.join("; ")}</div>
                     )}
-                    {isAdmin && b.status === 'Growing' && b.isSaleReady && (
-                      <button
-                        type="button"
-                        className="btn btn-small"
-                        onClick={() => void onMarkForSale(b.id)}
-                      >
-                        Mark ForSale
-                      </button>
-                    )}
+                  </td>
+                  <td>
+                    <div className="row-actions">
+                      {isAdmin && (
+                        <IconButton
+                          label="Edit"
+                          onClick={() => handleStartEdit(batch)}
+                        >
+                          <EditIcon />
+                        </IconButton>
+                      )}
+                      {isAdmin &&
+                        batch.status === "Growing" &&
+                        batch.isSaleReady && (
+                          <IconButton
+                            label="Mark ForSale"
+                            variant="success"
+                            disabled={markingForSaleId === batch.id}
+                            onClick={() => void markForSale(batch.id)}
+                          >
+                            <ForSaleIcon />
+                          </IconButton>
+                        )}
+                    </div>
                   </td>
                 </tr>
               ))
@@ -303,5 +313,5 @@ export function BatchesPage() {
         </table>
       )}
     </div>
-  )
+  );
 }

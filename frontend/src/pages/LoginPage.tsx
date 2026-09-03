@@ -1,45 +1,47 @@
 import { useState, type FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { useAuth } from '../auth/AuthContext'
-import { ApiError } from '../api/client'
+import { Button } from '../components/Button'
 import { ErrorBanner } from '../components/ErrorBanner'
+import { useLogin } from '../hooks/useLogin'
+
+function redirectPathFromState(state: unknown): string {
+  if (
+    typeof state !== 'object' ||
+    state === null ||
+    !('from' in state) ||
+    typeof state.from !== 'string'
+  ) {
+    return '/'
+  }
+  const from = state.from
+  if (!from.startsWith('/') || from.startsWith('//')) return '/'
+  return from
+}
 
 export function LoginPage() {
-  const { isAuthenticated, login } = useAuth()
+  const { isAuthenticated, error, isSigningIn, signIn } = useLogin()
   const navigate = useNavigate()
   const location = useLocation()
-  const from = (location.state as { from?: string } | null)?.from || '/'
+  const from = redirectPathFromState(location.state)
 
-  const [email, setEmail] = useState('admin@nursery.local')
-  const [password, setPassword] = useState('Admin123!')
-  const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
 
   if (isAuthenticated) {
     return <Navigate to={from} replace />
   }
 
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault()
-    setError(null)
-    setBusy(true)
-    try {
-      await login(email.trim(), password)
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault()
+    const didSignIn = await signIn(email.trim(), password)
+    if (didSignIn) {
       navigate(from, { replace: true })
-    } catch (err) {
-      const msg =
-        err instanceof ApiError
-          ? err.message
-          : 'Login failed. Is the API running?'
-      setError(msg)
-    } finally {
-      setBusy(false)
     }
   }
 
   return (
     <div className="login-page">
-      <form className="login-card" onSubmit={onSubmit}>
+      <form className="login-card" onSubmit={handleSubmit}>
         <h1>Plant Nursery</h1>
         <p className="muted">Sign in to manage batches and watering.</p>
         <ErrorBanner message={error} />
@@ -63,13 +65,9 @@ export function LoginPage() {
             autoComplete="current-password"
           />
         </label>
-        <button type="submit" className="btn" disabled={busy}>
-          {busy ? 'Signing in…' : 'Sign in'}
-        </button>
-        <p className="hint">
-          Demo: <code>admin@nursery.local</code> / <code>Admin123!</code> or{' '}
-          <code>staff@nursery.local</code> / <code>Staff123!</code>
-        </p>
+        <Button type="submit" disabled={isSigningIn}>
+          {isSigningIn ? 'Signing in…' : 'Sign in'}
+        </Button>
       </form>
     </div>
   )

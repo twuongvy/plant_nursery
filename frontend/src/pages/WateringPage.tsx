@@ -1,51 +1,40 @@
-import { useEffect, useState } from 'react'
-import { listDueWaterings, recordWatering } from '../api/waterings'
-import { ApiError } from '../api/client'
+import { useState } from 'react'
 import { Badge } from '../components/Badge'
+import { Button } from '../components/Button'
 import { ErrorBanner } from '../components/ErrorBanner'
-import type { WateringDueItem } from '../types'
+import { useWaterings } from '../hooks/useWaterings'
+import { formatDateTime } from '../utils/date'
 
 export function WateringPage() {
-  const [items, setItems] = useState<WateringDueItem[]>([])
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [recordingId, setRecordingId] = useState<number | null>(null)
-  const [note, setNote] = useState('')
+  const {
+    dueItems,
+    error,
+    isLoading,
+    recordingBatchId,
+    recordBatchWatering,
+  } = useWaterings()
+  const [notesByBatchId, setNotesByBatchId] = useState<Record<number, string>>(
+    {},
+  )
 
-  async function reload() {
-    setLoading(true)
-    setError(null)
-    try {
-      setItems(await listDueWaterings())
-    } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : 'Failed to load watering queue.',
-      )
-    } finally {
-      setLoading(false)
-    }
+  function handleNoteChange(batchId: number, note: string) {
+    setNotesByBatchId((prev) => ({ ...prev, [batchId]: note }))
   }
 
-  useEffect(() => {
-    void reload()
-  }, [])
-
-  async function onRecord(batchId: number) {
-    setError(null)
-    setRecordingId(batchId)
-    try {
-      await recordWatering({
-        batchId,
-        note: note.trim() || null,
-      })
-      setNote('')
-      await reload()
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not record watering.')
-    } finally {
-      setRecordingId(null)
-    }
+  async function handleRecord(batchId: number) {
+    const didRecord = await recordBatchWatering({
+      batchId,
+      note: notesByBatchId[batchId]?.trim() || null,
+    })
+    if (!didRecord) return
+    setNotesByBatchId((prev) => {
+      const next = { ...prev }
+      delete next[batchId]
+      return next
+    })
   }
+
+  const isRecording = recordingBatchId !== null
 
   return (
     <div>
@@ -53,18 +42,7 @@ export function WateringPage() {
       <p className="muted">Due and overdue batches based on species watering interval.</p>
       <ErrorBanner message={error} />
 
-      <div className="panel">
-        <label>
-          Optional note for next watering
-          <input
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="e.g. light mist"
-          />
-        </label>
-      </div>
-
-      {loading ? (
+      {isLoading ? (
         <p>Loading…</p>
       ) : (
         <table className="data-table">
@@ -76,49 +54,56 @@ export function WateringPage() {
               <th>Last watered</th>
               <th>Due</th>
               <th>Status</th>
+              <th>Note</th>
               <th />
             </tr>
           </thead>
           <tbody>
-            {items.length === 0 ? (
+            {dueItems.length === 0 ? (
               <tr>
-                <td colSpan={7}>Nothing due right now.</td>
+                <td colSpan={8}>Nothing due right now.</td>
               </tr>
             ) : (
-              items.map((item) => (
-                <tr key={item.batchId} className={item.isOverdue ? 'row-overdue' : undefined}>
-                  <td>#{item.batchId}</td>
-                  <td>{item.speciesName || '—'}</td>
-                  <td>{item.location || '—'}</td>
+              dueItems.map((dueItem) => (
+                <tr key={dueItem.batchId} className={dueItem.isOverdue ? 'row-overdue' : undefined}>
+                  <td>#{dueItem.batchId}</td>
+                  <td>{dueItem.speciesName || '—'}</td>
+                  <td>{dueItem.location || '—'}</td>
                   <td>
-                    {item.lastWateredAt
-                      ? item.lastWateredAt.slice(0, 16).replace('T', ' ')
+                    {dueItem.lastWateredAt
+                      ? formatDateTime(dueItem.lastWateredAt)
                       : 'Never'}
                   </td>
+                  <td>{formatDateTime(dueItem.dueAt)}</td>
                   <td>
-                    {item.dueAt
-                      ? item.dueAt.slice(0, 16).replace('T', ' ')
-                      : '—'}
-                  </td>
-                  <td>
-                    {item.isOverdue ? (
+                    {dueItem.isOverdue ? (
                       <Badge tone="bad">
                         Overdue
-                        {item.daysOverdue != null ? ` (${item.daysOverdue}d)` : ''}
+                        {dueItem.daysOverdue != null ? ` (${dueItem.daysOverdue}d)` : ''}
                       </Badge>
                     ) : (
                       <Badge tone="warn">Due</Badge>
                     )}
                   </td>
                   <td>
-                    <button
+                    <input
+                      value={notesByBatchId[dueItem.batchId] ?? ''}
+                      onChange={(e) =>
+                        handleNoteChange(dueItem.batchId, e.target.value)
+                      }
+                      placeholder="Optional note"
+                      disabled={isRecording}
+                    />
+                  </td>
+                  <td>
+                    <Button
                       type="button"
-                      className="btn btn-small"
-                      disabled={recordingId === item.batchId}
-                      onClick={() => void onRecord(item.batchId)}
+                      size="sm"
+                      disabled={isRecording}
+                      onClick={() => void handleRecord(dueItem.batchId)}
                     >
-                      {recordingId === item.batchId ? 'Saving…' : 'Record watering'}
-                    </button>
+                      {recordingBatchId === dueItem.batchId ? 'Saving…' : 'Record watering'}
+                    </Button>
                   </td>
                 </tr>
               ))

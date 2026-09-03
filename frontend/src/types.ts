@@ -3,6 +3,17 @@ export type Role = 'Admin' | 'User'
 export type HealthStatus = 'Healthy' | 'Sick' | 'Quarantine'
 export type BatchStatus = 'Growing' | 'ForSale' | 'SoldOut'
 
+export const HEALTH_STATUSES: HealthStatus[] = ['Healthy', 'Sick', 'Quarantine']
+export const BATCH_STATUSES: BatchStatus[] = ['Growing', 'ForSale', 'SoldOut']
+
+export function isHealthStatus(value: string): value is HealthStatus {
+  return HEALTH_STATUSES.some((status) => status === value)
+}
+
+export function isBatchStatus(value: string): value is BatchStatus {
+  return BATCH_STATUSES.some((status) => status === value)
+}
+
 export interface LoginRequest {
   email: string
   password: string
@@ -11,6 +22,15 @@ export interface LoginRequest {
 export interface LoginResponse {
   token: string
   email: string
+  username: string
+  role: Role
+  expiresAtUtc: string
+}
+
+export interface MeResponse {
+  id: number
+  email: string
+  username: string
   role: Role
 }
 
@@ -39,6 +59,9 @@ export interface Batch {
   location?: string | null
   status: BatchStatus
   isSaleReady: boolean
+  isWateringOverdue?: boolean
+  lastWateredAt?: string | null
+  nextWateringDueAt?: string
   readinessNotes?: string[]
 }
 
@@ -56,6 +79,7 @@ export interface WateringDueItem {
   speciesName?: string
   location?: string | null
   quantity?: number
+  plantedAt?: string
   lastWateredAt?: string | null
   dueAt?: string | null
   isOverdue: boolean
@@ -77,5 +101,6 @@ export interface ApiErrorBody {
   message?: string
   title?: string
   detail?: string
+  failedRules?: string[]
   errors?: Record<string, string[]>
 }

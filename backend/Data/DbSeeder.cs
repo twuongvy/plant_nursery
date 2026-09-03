@@ -5,25 +5,30 @@ namespace PlantNursery.Api.Data;
 
 public static class DbSeeder
 {
-    public static async Task SeedAsync(AppDbContext db, CancellationToken ct = default)
+    public static async Task SeedAsync(
+        AppDbContext db,
+        string? adminPassword,
+        string? staffPassword,
+        CancellationToken ct = default)
     {
-        await db.Database.MigrateAsync(ct);
-
         if (!await db.Users.AnyAsync(ct))
         {
+            if (string.IsNullOrWhiteSpace(adminPassword) || string.IsNullOrWhiteSpace(staffPassword))
+                return;
+
             db.Users.AddRange(
                 new User
                 {
                     Email = "admin@nursery.local",
                     Username = "admin",
-                    PasswordHash = BCrypt.Net.BCrypt.HashPassword("Admin123!"),
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword(adminPassword),
                     Role = UserRole.Admin
                 },
                 new User
                 {
                     Email = "staff@nursery.local",
                     Username = "staff",
-                    PasswordHash = BCrypt.Net.BCrypt.HashPassword("Staff123!"),
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword(staffPassword),
                     Role = UserRole.User
                 });
             await db.SaveChangesAsync(ct);
@@ -56,7 +61,8 @@ public static class DbSeeder
             db.PlantSpecies.AddRange(monstera, snake, pothos);
             await db.SaveChangesAsync(ct);
 
-            var admin = await db.Users.FirstAsync(u => u.Email == "admin@nursery.local", ct);
+            var actor = await db.Users.FirstOrDefaultAsync(u => u.Email == "admin@nursery.local", ct)
+                        ?? await db.Users.FirstAsync(ct);
             var today = DateTime.UtcNow.Date;
 
             var readyBatch = new Batch
@@ -104,7 +110,7 @@ public static class DbSeeder
             {
                 BatchId = readyBatch.Id,
                 WateredAt = today.AddDays(-2),
-                WateredByUserId = admin.Id,
+                WateredByUserId = actor.Id,
                 Note = "Seed: recent watering"
             });
             // Overdue batch: last watered beyond interval (pothos = 5 days).
@@ -112,7 +118,7 @@ public static class DbSeeder
             {
                 BatchId = overdueBatch.Id,
                 WateredAt = today.AddDays(-10),
-                WateredByUserId = admin.Id,
+                WateredByUserId = actor.Id,
                 Note = "Seed: stale watering"
             });
             // Young batch: watered at planting (not yet due).
@@ -120,7 +126,7 @@ public static class DbSeeder
             {
                 BatchId = youngBatch.Id,
                 WateredAt = youngBatch.PlantedAt,
-                WateredByUserId = admin.Id,
+                WateredByUserId = actor.Id,
                 Note = "Seed: initial watering"
             });
 

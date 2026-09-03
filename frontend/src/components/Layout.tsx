@@ -1,9 +1,14 @@
-import { NavLink, Outlet } from 'react-router-dom'
-import { useAuth } from '../auth/AuthContext'
-import { getApiBaseUrl } from '../api/client'
+import { NavLink, Outlet } from "react-router-dom";
+import { getApiBaseUrl } from "../api/client";
+import { useAuth } from "../auth/AuthContext";
+import { Button } from "./Button";
 
 export function Layout() {
-  const { email, role, isAdmin, logout } = useAuth()
+  const { email, role, isAdmin, logout } = useAuth();
+
+  function handleLogout() {
+    logout();
+  }
 
   return (
     <div className="app-shell">
@@ -21,9 +26,14 @@ export function Layout() {
           <span>
             {email} ({role})
           </span>
-          <button type="button" className="btn btn-secondary" onClick={logout}>
+          <Button
+            type="button"
+            variant="secondary"
+            className={"text-center"}
+            onClick={handleLogout}
+          >
             Log out
-          </button>
+          </Button>
         </div>
       </header>
       <main className="page">
@@ -33,5 +43,5 @@ export function Layout() {
         API: <code>{getApiBaseUrl()}</code>
       </footer>
     </div>
-  )
+  );
 }

@@ -9,12 +9,15 @@ using PlantNursery.Api.Services;
 var builder = WebApplication.CreateBuilder(args);
 
 var connectionString = builder.Configuration.GetConnectionString("Default")
-    ?? "Server=localhost;Port=3306;Database=plant_nursery;User=root;Password=YOUR_PASSWORD;";
+    ?? throw new InvalidOperationException("Connection string 'Default' is not configured.");
 
 var jwtSection = builder.Configuration.GetSection("Jwt");
 var jwtSettings = jwtSection.Get<JwtSettings>() ?? new JwtSettings();
 if (string.IsNullOrWhiteSpace(jwtSettings.Key) || jwtSettings.Key.Length < 32)
-    jwtSettings.Key = "PlantNurseryDemo_DevSecret_Key_ChangeInProduction_32+";
+{
+    throw new InvalidOperationException(
+        "Jwt:Key must be set and at least 32 characters. Configure Jwt:Key or the Jwt__Key environment variable.");
+}
 
 builder.Services.AddSingleton(jwtSettings);
 builder.Services.AddScoped<JwtTokenService>();
@@ -89,9 +92,9 @@ if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
+    app.UseCors("ViteDev");
 }
 
-app.UseCors("ViteDev");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
@@ -102,9 +105,13 @@ using (var scope = app.Services.CreateScope())
     var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("DbSeeder");
     try
     {
-        await DbSeeder.SeedAsync(db);
+        await db.Database.MigrateAsync();
+        await DbSeeder.SeedAsync(
+            db,
+            app.Configuration["SeedUsers:AdminPassword"],
+            app.Configuration["SeedUsers:StaffPassword"]);
     }
-    catch (Exception ex)
+    catch (Exception ex) when (app.Environment.IsDevelopment())
     {
         logger.LogWarning(ex,
             "Database migrate/seed skipped. Ensure MySQL is running and connection string is set, then run: dotnet ef database update");

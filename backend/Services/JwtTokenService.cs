@@ -10,7 +10,7 @@ public class JwtSettings
 {
     public string Issuer { get; set; } = "PlantNursery";
     public string Audience { get; set; } = "PlantNursery";
-    public string Key { get; set; } = "CHANGE_ME_TO_A_LONG_RANDOM_SECRET_KEY_32+";
+    public string Key { get; set; } = string.Empty;
     public int ExpirationMinutes { get; set; } = 480;
 }
 

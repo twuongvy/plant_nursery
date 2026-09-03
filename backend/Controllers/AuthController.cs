@@ -1,9 +1,9 @@
-using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PlantNursery.Api.Data;
 using PlantNursery.Api.Dtos;
+using PlantNursery.Api.Extensions;
 using PlantNursery.Api.Services;
 
 namespace PlantNursery.Api.Controllers;
@@ -23,7 +23,7 @@ public class AuthController : ControllerBase
 
     [HttpPost("login")]
     [AllowAnonymous]
-    public async Task<ActionResult<LoginResponse>> Login([FromBody] LoginRequest request, CancellationToken ct)
+    public async Task<ActionResult<LoginResponse>> LoginAsync([FromBody] LoginRequest request, CancellationToken ct)
     {
         var email = request.Email.Trim().ToLowerInvariant();
         var user = await _db.Users.FirstOrDefaultAsync(u => u.Email == email, ct);
@@ -36,27 +36,14 @@ public class AuthController : ControllerBase
 
     [HttpGet("me")]
     [Authorize]
-    public async Task<ActionResult<object>> Me(CancellationToken ct)
+    public async Task<ActionResult<MeResponse>> GetMeAsync(CancellationToken ct)
     {
-        var userId = GetUserId();
+        var userId = User.GetUserId();
         if (userId is null) return Unauthorized();
 
         var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, ct);
         if (user is null) return Unauthorized();
 
-        return Ok(new
-        {
-            user.Id,
-            user.Email,
-            user.Username,
-            Role = user.Role.ToString()
-        });
-    }
-
-    private int? GetUserId()
-    {
-        var raw = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                  ?? User.FindFirstValue("sub");
-        return int.TryParse(raw, out var id) ? id : null;
+        return Ok(new MeResponse(user.Id, user.Email, user.Username, user.Role.ToString()));
     }
 }

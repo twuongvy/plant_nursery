@@ -1,8 +1,8 @@
-interface Props {
+interface ErrorBannerProps {
   message: string | null
 }
 
-export function ErrorBanner({ message }: Props) {
+export function ErrorBanner({ message }: ErrorBannerProps) {
   if (!message) return null
   return <div className="banner banner-error">{message}</div>
 }

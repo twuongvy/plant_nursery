@@ -1,0 +1,95 @@
+---
+description: Frontend ReactJS coding standards — architecture, components, TypeScript, API, and UI
+globs: frontend/**
+alwaysApply: false
+---
+
+# Frontend ReactJS Coding Rules
+
+## General
+
+- Write clean, readable, maintainable, simple code. Prefer understandable solutions over clever ones.
+- Follow existing architecture, naming, and style. Reuse existing utilities, components, hooks, types, and functions. Avoid duplicate code.
+- Do not introduce unnecessary complexity or new folders/libraries without a clear reason.
+- Do not change unrelated code. Keep the change as small as possible.
+
+## Components
+
+- Use functional components and hooks. Never class components.
+- Prefer small, focused, single-responsibility components. Split when it improves readability or reuse — not just to shorten a file.
+- Before creating a component, check whether an existing one can be reused or extended.
+- Keep business logic out of purely presentational components when possible.
+- Avoid deeply nested component or JSX structures unless necessary.
+
+## Naming
+
+- `camelCase` for variables, functions, props, and hooks. `PascalCase` for components, classes, and types/interfaces.
+- Use descriptive names. Avoid vague names like `data`, `item`, `value`, `obj`, or `temp` when a better name exists.
+- Booleans: `is`, `has`, `can`, `should` prefixes.
+- Event handlers: `handleSubmit`, `handleChange`, `handleDelete`.
+- Custom hooks must start with `use`.
+
+## React
+
+- Follow the Rules of Hooks. Do not call hooks conditionally.
+- Do not use `useEffect` unless necessary. Do not use it for values that can be derived during render.
+- Avoid unnecessary `useMemo` / `useCallback`. Do not optimize prematurely.
+- Use stable, meaningful list `key`s. Avoid array indexes unless there is a valid reason.
+
+## State and props
+
+- Keep state as local as possible. Do not lift to global/context without a reason.
+- Prefer component state, props, or existing context before new global state.
+- Do not duplicate state. Do not store derived values that can be calculated from state or props.
+- Keep server state and UI state conceptually separate.
+- Pass only the props a component needs. Do not pass large objects when a few fields suffice.
+- Avoid excessive prop drilling; use existing context/state patterns. Never mutate props.
+
+## TypeScript
+
+- Avoid `any`. Do not use it to bypass errors. Prefer types, interfaces, unions, and generics.
+- Reuse existing types. Avoid unnecessary `as` assertions.
+- Handle `null` and `undefined` explicitly.
+- Do not use `@ts-ignore` unless absolutely necessary, with an English comment explaining why.
+
+## API, errors, forms
+
+- Reuse existing API clients (`apiFetch`, `../api/*`). Do not create a parallel HTTP helper.
+- Keep API calls separate from UI rendering. Handle loading, success, empty, and error states.
+- Do not silently ignore errors or use empty `catch` blocks. Show user-facing feedback via existing patterns (`ErrorBanner`, dialogs).
+- Do not expose technical details or secrets in UI or logs.
+- Reuse existing form components and validation. Share validation instead of duplicating it.
+
+## Styling and UI
+
+- Reuse existing UI components (`Button`, `Dialog`, `IconButton`, `Badge`, `ErrorBanner`).
+- Follow the project's Tailwind + existing CSS class patterns. Do not add a new styling library without confirmation.
+- Avoid inline styles when utilities or existing classes suffice.
+- Keep responsive behavior in mind.
+
+## Constants, comments, files
+
+- Avoid magic numbers/strings when they are reusable or non-obvious. Do not constant-ify a one-off self-explanatory value.
+- Comments in English only. Explain **why**, not what. No leftover `TODO: fix later` / `temporary` comments unless genuinely required.
+- Follow existing folders (`pages`, `components`, `api`, `auth`, `utils`, `types`). Do not create new architectural layers without a reason.
+
+## Dependencies and security
+
+- Do not install a new npm package if existing code or native APIs suffice. Do not upgrade packages unless requested or required.
+- Never hard-code secrets. Follow existing auth patterns. Do not bypass authz.
+
+## Before changing code
+
+1. Inspect related code and reuse existing pieces.
+2. Match existing patterns.
+3. Make the smallest clean change.
+
+If requirements are ambiguous and behaviors could reasonably differ, ask a concise question first. When reporting an issue: what, why, recommended fix, which files.
+
+## Bugs
+
+Identify the root cause first. Smallest fix. No unrelated refactoring.
+
+## After changing code
+
+Check TypeScript/lint, unused imports, duplication, pattern fit, and regressions. Keep the result simple.

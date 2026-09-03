@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PlantNursery.Api.Data;
 using PlantNursery.Api.Dtos;
+using PlantNursery.Api.Extensions;
 using PlantNursery.Api.Models;
 using PlantNursery.Api.Services;
 
@@ -28,14 +29,14 @@ public class BatchesController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<BatchDto>>> GetAll(CancellationToken ct)
+    public async Task<ActionResult<IEnumerable<BatchDto>>> GetAllAsync(CancellationToken ct)
     {
         var batches = await LoadBatchesQuery().ToListAsync(ct);
         return Ok(batches.Select(MapBatch).ToList());
     }
 
     [HttpGet("{id:int}")]
-    public async Task<ActionResult<BatchDto>> GetById(int id, CancellationToken ct)
+    public async Task<ActionResult<BatchDto>> GetByIdAsync(int id, CancellationToken ct)
     {
         var batch = await LoadBatchesQuery().FirstOrDefaultAsync(b => b.Id == id, ct);
         if (batch is null) return NotFound();
@@ -43,30 +44,24 @@ public class BatchesController : ControllerBase
     }
 
     [HttpGet("{id:int}/readiness")]
-    public async Task<ActionResult<object>> GetReadiness(int id, CancellationToken ct)
+    public async Task<ActionResult<BatchReadinessDto>> GetReadinessAsync(int id, CancellationToken ct)
     {
         var batch = await LoadBatchesQuery().FirstOrDefaultAsync(b => b.Id == id, ct);
         if (batch is null) return NotFound();
 
         var result = _saleReadiness.Evaluate(batch);
-        return Ok(new
-        {
-            batchId = batch.Id,
-            result.IsReady,
-            failedRules = result.FailedRules
-        });
+        return Ok(new BatchReadinessDto(batch.Id, result.IsReady, result.FailedRules));
     }
 
     [HttpPost]
     [Authorize(Roles = nameof(UserRole.Admin))]
-    public async Task<ActionResult<BatchDto>> Create([FromBody] CreateBatchRequest request, CancellationToken ct)
+    public async Task<ActionResult<BatchDto>> CreateAsync([FromBody] CreateBatchRequest request, CancellationToken ct)
     {
-        if (!TryParseHealth(request.HealthStatus, out var health))
+        if (!EnumParse.TryParseDefined(request.HealthStatus, out HealthStatus health))
             return BadRequest(new { message = "Invalid HealthStatus. Use Healthy, Sick, or Quarantine." });
 
-        var status = BatchStatus.Growing;
-        if (!string.IsNullOrWhiteSpace(request.Status) && !Enum.TryParse(request.Status, true, out status))
-            return BadRequest(new { message = "Invalid Status. Use Growing, ForSale, or SoldOut." });
+        if (!TryNormalizePlantedAt(request.PlantedAt, out var plantedAt, out var plantedError))
+            return BadRequest(new { message = plantedError });
 
         var speciesExists = await _db.PlantSpecies.AnyAsync(s => s.Id == request.PlantSpeciesId, ct);
         if (!speciesExists)
@@ -76,29 +71,34 @@ public class BatchesController : ControllerBase
         {
             PlantSpeciesId = request.PlantSpeciesId,
             Quantity = request.Quantity,
-            PlantedAt = DateTime.SpecifyKind(request.PlantedAt.Date, DateTimeKind.Utc),
+            PlantedAt = plantedAt,
             HealthStatus = health,
             LocationLabel = string.IsNullOrWhiteSpace(request.Location) ? null : request.Location.Trim(),
-            Status = status
+            Status = BatchStatus.Growing
         };
         _db.Batches.Add(entity);
         await _db.SaveChangesAsync(ct);
 
         var created = await LoadBatchesQuery().FirstAsync(b => b.Id == entity.Id, ct);
-        return CreatedAtAction(nameof(GetById), new { id = entity.Id }, MapBatch(created));
+        return CreatedAtAction(nameof(GetByIdAsync), new { id = entity.Id }, MapBatch(created));
     }
 
     [HttpPut("{id:int}")]
     [Authorize(Roles = nameof(UserRole.Admin))]
-    public async Task<ActionResult<BatchDto>> Update(int id, [FromBody] UpdateBatchRequest request, CancellationToken ct)
+    public async Task<ActionResult<BatchDto>> UpdateAsync(int id, [FromBody] UpdateBatchRequest request, CancellationToken ct)
     {
         var entity = await _db.Batches.FirstOrDefaultAsync(b => b.Id == id, ct);
         if (entity is null) return NotFound();
 
-        if (!TryParseHealth(request.HealthStatus, out var health))
+        if (!EnumParse.TryParseDefined(request.HealthStatus, out HealthStatus health))
             return BadRequest(new { message = "Invalid HealthStatus. Use Healthy, Sick, or Quarantine." });
-        if (!Enum.TryParse<BatchStatus>(request.Status, true, out var status))
+        if (!EnumParse.TryParseDefined(request.Status, out BatchStatus status))
             return BadRequest(new { message = "Invalid Status. Use Growing, ForSale, or SoldOut." });
+        if (status == BatchStatus.ForSale && entity.Status != BatchStatus.ForSale)
+            return BadRequest(new { message = "Use mark-for-sale to set ForSale after the batch is sale-ready." });
+
+        if (!TryNormalizePlantedAt(request.PlantedAt, out var plantedAt, out var plantedError))
+            return BadRequest(new { message = plantedError });
 
         var speciesExists = await _db.PlantSpecies.AnyAsync(s => s.Id == request.PlantSpeciesId, ct);
         if (!speciesExists)
@@ -106,7 +106,7 @@ public class BatchesController : ControllerBase
 
         entity.PlantSpeciesId = request.PlantSpeciesId;
         entity.Quantity = request.Quantity;
-        entity.PlantedAt = DateTime.SpecifyKind(request.PlantedAt.Date, DateTimeKind.Utc);
+        entity.PlantedAt = plantedAt;
         entity.HealthStatus = health;
         entity.LocationLabel = string.IsNullOrWhiteSpace(request.Location) ? null : request.Location.Trim();
         entity.Status = status;
@@ -119,12 +119,12 @@ public class BatchesController : ControllerBase
     /// <summary>Optional light update: User may update health only.</summary>
     [HttpPatch("{id:int}/health")]
     [Authorize(Roles = $"{nameof(UserRole.Admin)},{nameof(UserRole.User)}")]
-    public async Task<ActionResult<BatchDto>> UpdateHealth(int id, [FromBody] UpdateBatchHealthRequest request, CancellationToken ct)
+    public async Task<ActionResult<BatchDto>> UpdateHealthAsync(int id, [FromBody] UpdateBatchHealthRequest request, CancellationToken ct)
     {
         var entity = await _db.Batches.FirstOrDefaultAsync(b => b.Id == id, ct);
         if (entity is null) return NotFound();
 
-        if (!TryParseHealth(request.HealthStatus, out var health))
+        if (!EnumParse.TryParseDefined(request.HealthStatus, out HealthStatus health))
             return BadRequest(new { message = "Invalid HealthStatus. Use Healthy, Sick, or Quarantine." });
 
         entity.HealthStatus = health;
@@ -136,11 +136,10 @@ public class BatchesController : ControllerBase
 
     [HttpPost("{id:int}/mark-for-sale")]
     [Authorize(Roles = nameof(UserRole.Admin))]
-    public async Task<ActionResult<BatchDto>> MarkForSale(int id, CancellationToken ct)
+    public async Task<ActionResult<BatchDto>> MarkForSaleAsync(int id, CancellationToken ct)
     {
         var batch = await _db.Batches
-            .Include(b => b.PlantSpecies)
-            .Include(b => b.WateringLogs)
+            .IncludeScheduleData()
             .FirstOrDefaultAsync(b => b.Id == id, ct);
         if (batch is null) return NotFound();
 
@@ -156,7 +155,7 @@ public class BatchesController : ControllerBase
 
     [HttpDelete("{id:int}")]
     [Authorize(Roles = nameof(UserRole.Admin))]
-    public async Task<IActionResult> Delete(int id, CancellationToken ct)
+    public async Task<IActionResult> DeleteAsync(int id, CancellationToken ct)
     {
         var entity = await _db.Batches.FirstOrDefaultAsync(b => b.Id == id, ct);
         if (entity is null) return NotFound();
@@ -169,14 +168,13 @@ public class BatchesController : ControllerBase
     private IQueryable<Batch> LoadBatchesQuery() =>
         _db.Batches
             .AsNoTracking()
-            .Include(b => b.PlantSpecies)
-            .Include(b => b.WateringLogs)
+            .IncludeScheduleData()
             .OrderBy(b => b.Id);
 
     private BatchDto MapBatch(Batch batch)
     {
         var schedule = _watering.Evaluate(batch);
-        var readiness = _saleReadiness.Evaluate(batch);
+        var readiness = _saleReadiness.Evaluate(batch, schedule);
         return new BatchDto(
             batch.Id,
             batch.PlantSpeciesId,
@@ -193,6 +191,23 @@ public class BatchesController : ControllerBase
             readiness.IsReady ? null : readiness.FailedRules);
     }
 
-    private static bool TryParseHealth(string value, out HealthStatus health) =>
-        Enum.TryParse(value, true, out health);
+    private static bool TryNormalizePlantedAt(DateTime plantedAt, out DateTime utcDate, out string? error)
+    {
+        utcDate = default;
+        if (plantedAt == default)
+        {
+            error = "PlantedAt is required.";
+            return false;
+        }
+
+        utcDate = DateTime.SpecifyKind(plantedAt.Date, DateTimeKind.Utc);
+        if (utcDate > DateTime.UtcNow.Date)
+        {
+            error = "PlantedAt cannot be in the future.";
+            return false;
+        }
+
+        error = null;
+        return true;
+    }
 }

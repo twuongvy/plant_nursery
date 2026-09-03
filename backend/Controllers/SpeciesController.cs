@@ -20,31 +20,41 @@ public class SpeciesController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<PlantSpeciesDto>>> GetAll(CancellationToken ct)
+    public async Task<ActionResult<IEnumerable<PlantSpeciesDto>>> GetAllAsync(CancellationToken ct)
     {
-        var items = await _db.PlantSpecies
+        var speciesList = await _db.PlantSpecies
             .AsNoTracking()
-            .OrderBy(s => s.Name)
-            .Select(s => new PlantSpeciesDto(s.Id, s.Name, s.ScientificName, s.WateringIntervalDays, s.MinDaysBeforeSale))
+            .OrderBy(species => species.Id)
+            .Select(species => new PlantSpeciesDto(
+                species.Id,
+                species.Name,
+                species.ScientificName,
+                species.WateringIntervalDays,
+                species.MinDaysBeforeSale))
             .ToListAsync(ct);
-        return Ok(items);
+        return Ok(speciesList);
     }
 
     [HttpGet("{id:int}")]
-    public async Task<ActionResult<PlantSpeciesDto>> GetById(int id, CancellationToken ct)
+    public async Task<ActionResult<PlantSpeciesDto>> GetByIdAsync(int id, CancellationToken ct)
     {
-        var s = await _db.PlantSpecies.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
-        if (s is null) return NotFound();
-        return Ok(new PlantSpeciesDto(s.Id, s.Name, s.ScientificName, s.WateringIntervalDays, s.MinDaysBeforeSale));
+        var species = await _db.PlantSpecies.AsNoTracking().FirstOrDefaultAsync(row => row.Id == id, ct);
+        if (species is null) return NotFound();
+        return Ok(ToDto(species));
     }
 
     [HttpPost]
     [Authorize(Roles = nameof(UserRole.Admin))]
-    public async Task<ActionResult<PlantSpeciesDto>> Create([FromBody] CreatePlantSpeciesRequest request, CancellationToken ct)
+    public async Task<ActionResult<PlantSpeciesDto>> CreateAsync([FromBody] PlantSpeciesWriteRequest request, CancellationToken ct)
     {
+        if (!TryNormalizeName(request.Name, out var name, out var nameError))
+            return BadRequest(new { message = nameError });
+        if (await NameTakenAsync(name, excludeId: null, ct))
+            return Conflict(new { message = "A species with that name already exists." });
+
         var entity = new PlantSpecies
         {
-            Name = request.Name.Trim(),
+            Name = name,
             ScientificName = string.IsNullOrWhiteSpace(request.ScientificName) ? null : request.ScientificName.Trim(),
             WateringIntervalDays = request.WateringIntervalDays,
             MinDaysBeforeSale = request.MinDaysBeforeSale
@@ -52,39 +62,64 @@ public class SpeciesController : ControllerBase
         _db.PlantSpecies.Add(entity);
         await _db.SaveChangesAsync(ct);
 
-        var dto = new PlantSpeciesDto(entity.Id, entity.Name, entity.ScientificName, entity.WateringIntervalDays, entity.MinDaysBeforeSale);
-        return CreatedAtAction(nameof(GetById), new { id = entity.Id }, dto);
+        return CreatedAtAction(nameof(GetByIdAsync), new { id = entity.Id }, ToDto(entity));
     }
 
     [HttpPut("{id:int}")]
     [Authorize(Roles = nameof(UserRole.Admin))]
-    public async Task<ActionResult<PlantSpeciesDto>> Update(int id, [FromBody] UpdatePlantSpeciesRequest request, CancellationToken ct)
+    public async Task<ActionResult<PlantSpeciesDto>> UpdateAsync(int id, [FromBody] PlantSpeciesWriteRequest request, CancellationToken ct)
     {
-        var entity = await _db.PlantSpecies.FirstOrDefaultAsync(x => x.Id == id, ct);
+        var entity = await _db.PlantSpecies.FirstOrDefaultAsync(species => species.Id == id, ct);
         if (entity is null) return NotFound();
 
-        entity.Name = request.Name.Trim();
+        if (!TryNormalizeName(request.Name, out var name, out var nameError))
+            return BadRequest(new { message = nameError });
+        if (await NameTakenAsync(name, excludeId: id, ct))
+            return Conflict(new { message = "A species with that name already exists." });
+
+        entity.Name = name;
         entity.ScientificName = string.IsNullOrWhiteSpace(request.ScientificName) ? null : request.ScientificName.Trim();
         entity.WateringIntervalDays = request.WateringIntervalDays;
         entity.MinDaysBeforeSale = request.MinDaysBeforeSale;
         await _db.SaveChangesAsync(ct);
 
-        return Ok(new PlantSpeciesDto(entity.Id, entity.Name, entity.ScientificName, entity.WateringIntervalDays, entity.MinDaysBeforeSale));
+        return Ok(ToDto(entity));
     }
 
     [HttpDelete("{id:int}")]
     [Authorize(Roles = nameof(UserRole.Admin))]
-    public async Task<IActionResult> Delete(int id, CancellationToken ct)
+    public async Task<IActionResult> DeleteAsync(int id, CancellationToken ct)
     {
-        var entity = await _db.PlantSpecies.FirstOrDefaultAsync(x => x.Id == id, ct);
+        var entity = await _db.PlantSpecies.FirstOrDefaultAsync(species => species.Id == id, ct);
         if (entity is null) return NotFound();
 
-        var hasBatches = await _db.Batches.AnyAsync(b => b.PlantSpeciesId == id, ct);
+        var hasBatches = await _db.Batches.AnyAsync(batch => batch.PlantSpeciesId == id, ct);
         if (hasBatches)
             return Conflict(new { message = "Cannot delete species that still has batches." });
 
         _db.PlantSpecies.Remove(entity);
         await _db.SaveChangesAsync(ct);
         return NoContent();
+    }
+
+    private static PlantSpeciesDto ToDto(PlantSpecies species) =>
+        new(species.Id, species.Name, species.ScientificName, species.WateringIntervalDays, species.MinDaysBeforeSale);
+
+    private async Task<bool> NameTakenAsync(string name, int? excludeId, CancellationToken ct) =>
+        await _db.PlantSpecies.AnyAsync(
+            species => species.Name == name && (excludeId == null || species.Id != excludeId),
+            ct);
+
+    private static bool TryNormalizeName(string? raw, out string name, out string? error)
+    {
+        name = (raw ?? string.Empty).Trim();
+        if (name.Length == 0)
+        {
+            error = "Name is required.";
+            return false;
+        }
+
+        error = null;
+        return true;
     }
 }

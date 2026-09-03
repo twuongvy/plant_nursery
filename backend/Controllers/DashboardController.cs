@@ -29,7 +29,7 @@ public class DashboardController : ControllerBase
 
     /// <summary>Frontend contract: overdueWaterings, saleReadyBatches, growingBatches.</summary>
     [HttpGet]
-    public async Task<ActionResult<DashboardSummaryDto>> Get(CancellationToken ct)
+    public async Task<ActionResult<DashboardSummaryDto>> GetAsync(CancellationToken ct)
     {
         var batches = await LoadBatchesAsync(ct);
 
@@ -37,14 +37,14 @@ public class DashboardController : ControllerBase
             .Where(b => b.Status != BatchStatus.SoldOut)
             .Count(b => _watering.Evaluate(b).IsOverdue);
 
-        var saleReadyBatches = batches.Count(b => _saleReadiness.Evaluate(b).IsReady);
+        var saleReadyBatches = CountGrowingSaleReady(batches);
         var growingBatches = batches.Count(b => b.Status == BatchStatus.Growing);
 
         return Ok(new DashboardSummaryDto(overdueWaterings, saleReadyBatches, growingBatches));
     }
 
     [HttpGet("summary")]
-    public async Task<ActionResult<DashboardDetailDto>> Summary(CancellationToken ct)
+    public async Task<ActionResult<DashboardDetailDto>> GetSummaryAsync(CancellationToken ct)
     {
         var batches = await LoadBatchesAsync(ct);
         var active = batches.Where(b => b.Status != BatchStatus.SoldOut).ToList();
@@ -56,67 +56,55 @@ public class DashboardController : ControllerBase
                 return new
                 {
                     Info = info,
-                    Dto = ToDueItem(b, info)
+                    Dto = WateringDueItemMapping.From(b, info)
                 };
             })
             .ToList();
 
-        var overdue = dueItems.Where(x => x.Info.IsOverdue).ToList();
-        var dueSoon = dueItems.Where(x => x.Info.State == WateringScheduleState.DueSoon).ToList();
+        var overdue = dueItems.Where(entry => entry.Info.IsOverdue).ToList();
+        var dueSoon = dueItems.Where(entry => entry.Info.State == WateringScheduleState.DueSoon).ToList();
 
         return Ok(new DashboardDetailDto(
             OverdueWateringCount: overdue.Count,
             DueSoonWateringCount: dueSoon.Count,
-            SaleReadyCount: batches.Count(b => _saleReadiness.Evaluate(b).IsReady),
-            GrowingCount: batches.Count(b => b.Status == BatchStatus.Growing),
-            ForSaleCount: batches.Count(b => b.Status == BatchStatus.ForSale),
+            SaleReadyCount: CountGrowingSaleReady(batches),
+            GrowingCount: batches.Count(batch => batch.Status == BatchStatus.Growing),
+            ForSaleCount: batches.Count(batch => batch.Status == BatchStatus.ForSale),
             DueWaterings: overdue.Concat(dueSoon)
-                .Select(x => x.Dto)
-                .OrderByDescending(d => d.IsOverdue)
-                .ThenBy(d => d.DueAt)
+                .Select(entry => entry.Dto)
+                .OrderByDescending(dueItem => dueItem.IsOverdue)
+                .ThenBy(dueItem => dueItem.DueAt)
                 .ToList()));
     }
 
     [HttpGet("readiness")]
-    public async Task<ActionResult<IEnumerable<object>>> Readiness(CancellationToken ct)
+    public async Task<ActionResult<IEnumerable<DashboardReadinessItemDto>>> GetReadinessAsync(CancellationToken ct)
     {
         var batches = await LoadBatchesAsync(ct);
 
-        var items = batches.Select(b =>
+        var readinessItems = batches.Select(batch =>
         {
-            var result = _saleReadiness.Evaluate(b);
-            return new
-            {
-                batchId = b.Id,
-                speciesName = b.PlantSpecies.Name,
-                location = b.LocationLabel,
-                status = b.Status.ToString(),
-                healthStatus = b.HealthStatus.ToString(),
-                isSaleReady = result.IsReady,
-                failedRules = result.FailedRules
-            };
+            var result = _saleReadiness.Evaluate(batch);
+            return new DashboardReadinessItemDto(
+                batch.Id,
+                batch.PlantSpecies.Name,
+                batch.LocationLabel,
+                batch.Status.ToString(),
+                batch.HealthStatus.ToString(),
+                result.IsReady,
+                result.FailedRules);
         });
 
-        return Ok(items);
+        return Ok(readinessItems);
     }
+
+    private int CountGrowingSaleReady(IEnumerable<Batch> batches) =>
+        batches.Count(b => b.Status == BatchStatus.Growing && _saleReadiness.Evaluate(b).IsReady);
 
     private async Task<List<Batch>> LoadBatchesAsync(CancellationToken ct) =>
         await _db.Batches
             .AsNoTracking()
-            .Include(b => b.PlantSpecies)
-            .Include(b => b.WateringLogs)
+            .IncludeScheduleData()
             .OrderBy(b => b.Id)
             .ToListAsync(ct);
-
-    private static WateringDueItemDto ToDueItem(Batch b, WateringScheduleInfo info) =>
-        new(
-            b.Id,
-            b.PlantSpecies.Name,
-            b.LocationLabel,
-            b.Quantity,
-            b.PlantedAt,
-            info.LastWateredAt,
-            info.NextDueAt,
-            info.IsOverdue,
-            info.DaysOverdue);
 }

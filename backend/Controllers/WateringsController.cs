@@ -1,9 +1,9 @@
-using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PlantNursery.Api.Data;
 using PlantNursery.Api.Dtos;
+using PlantNursery.Api.Extensions;
 using PlantNursery.Api.Models;
 using PlantNursery.Api.Services;
 
@@ -14,6 +14,8 @@ namespace PlantNursery.Api.Controllers;
 [Authorize]
 public class WateringsController : ControllerBase
 {
+    private const int UnfilteredListCap = 200;
+
     private readonly AppDbContext _db;
     private readonly WateringScheduleService _watering;
 
@@ -24,7 +26,7 @@ public class WateringsController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<WateringLogDto>>> GetAll([FromQuery] int? batchId, CancellationToken ct)
+    public async Task<ActionResult<IEnumerable<WateringLogDto>>> GetAllAsync([FromQuery] int? batchId, CancellationToken ct)
     {
         var query = _db.WateringLogs
             .AsNoTracking()
@@ -35,48 +37,37 @@ public class WateringsController : ControllerBase
         if (batchId.HasValue)
             query = query.Where(w => w.BatchId == batchId.Value);
 
-        var items = await query
-            .OrderByDescending(w => w.WateredAt)
-            .Select(w => new WateringLogDto(
-                w.Id,
-                w.BatchId,
-                w.Batch.LocationLabel,
-                w.WateredAt,
-                w.WateredByUserId,
-                w.WateredByUser.Username,
-                w.Note))
+        query = query.OrderByDescending(w => w.WateredAt);
+        if (!batchId.HasValue)
+            query = query.Take(UnfilteredListCap);
+
+        var logs = await query
+            .Select(log => new WateringLogDto(
+                log.Id,
+                log.BatchId,
+                log.Batch.LocationLabel,
+                log.WateredAt,
+                log.WateredByUserId,
+                log.WateredByUser.Username,
+                log.Note))
             .ToListAsync(ct);
 
-        return Ok(items);
+        return Ok(logs);
     }
 
     [HttpGet("due")]
-    public async Task<ActionResult<IEnumerable<WateringDueItemDto>>> GetDue(
+    public async Task<ActionResult<IEnumerable<WateringDueItemDto>>> GetDueAsync(
         [FromQuery] bool overdueOnly = false,
         CancellationToken ct = default)
     {
         var batches = await _db.Batches
             .AsNoTracking()
-            .Include(b => b.PlantSpecies)
-            .Include(b => b.WateringLogs)
+            .IncludeScheduleData()
             .Where(b => b.Status != BatchStatus.SoldOut)
             .ToListAsync(ct);
 
         var due = batches
-            .Select(b =>
-            {
-                var info = _watering.Evaluate(b);
-                return new WateringDueItemDto(
-                    b.Id,
-                    b.PlantSpecies.Name,
-                    b.LocationLabel,
-                    b.Quantity,
-                    b.PlantedAt,
-                    info.LastWateredAt,
-                    info.NextDueAt,
-                    info.IsOverdue,
-                    info.DaysOverdue);
-            })
+            .Select(b => WateringDueItemMapping.From(b, _watering.Evaluate(b)))
             .Where(d => overdueOnly
                 ? d.IsOverdue
                 : d.IsOverdue || d.DueAt.Date <= DateTime.UtcNow.Date.AddDays(1))
@@ -88,18 +79,19 @@ public class WateringsController : ControllerBase
     }
 
     [HttpPost]
-    public async Task<ActionResult<WateringLogDto>> Record([FromBody] CreateWateringLogRequest request, CancellationToken ct)
+    public async Task<ActionResult<WateringLogDto>> RecordAsync([FromBody] CreateWateringLogRequest request, CancellationToken ct)
     {
-        var userId = GetUserId();
+        var userId = User.GetUserId();
         if (userId is null) return Unauthorized();
 
-        var batchExists = await _db.Batches.AnyAsync(b => b.Id == request.BatchId, ct);
-        if (!batchExists)
+        var batch = await _db.Batches.FirstOrDefaultAsync(b => b.Id == request.BatchId, ct);
+        if (batch is null)
             return BadRequest(new { message = "BatchId not found." });
+        if (batch.Status == BatchStatus.SoldOut)
+            return BadRequest(new { message = "Cannot record watering for a sold-out batch." });
 
-        var wateredAt = request.WateredAt.HasValue
-            ? DateTime.SpecifyKind(request.WateredAt.Value, DateTimeKind.Utc)
-            : DateTime.UtcNow;
+        if (!TryResolveWateredAt(request.WateredAt, batch.PlantedAt, out var wateredAt, out var wateredError))
+            return BadRequest(new { message = wateredError });
 
         var entity = new WateringLog
         {
@@ -113,26 +105,53 @@ public class WateringsController : ControllerBase
 
         var created = await _db.WateringLogs
             .AsNoTracking()
-            .Include(w => w.Batch)
-            .Include(w => w.WateredByUser)
-            .FirstAsync(w => w.Id == entity.Id, ct);
+            .Include(log => log.Batch)
+            .Include(log => log.WateredByUser)
+            .FirstAsync(log => log.Id == entity.Id, ct);
 
-        var dto = new WateringLogDto(
-            created.Id,
-            created.BatchId,
-            created.Batch.LocationLabel,
-            created.WateredAt,
-            created.WateredByUserId,
-            created.WateredByUser.Username,
-            created.Note);
-
-        return CreatedAtAction(nameof(GetAll), new { batchId = created.BatchId }, dto);
+        return CreatedAtAction(nameof(GetAllAsync), new { batchId = created.BatchId }, ToDto(created));
     }
 
-    private int? GetUserId()
+    private static WateringLogDto ToDto(WateringLog log) =>
+        new(
+            log.Id,
+            log.BatchId,
+            log.Batch.LocationLabel,
+            log.WateredAt,
+            log.WateredByUserId,
+            log.WateredByUser.Username,
+            log.Note);
+
+    private static bool TryResolveWateredAt(
+        DateTime? requested,
+        DateTime plantedAt,
+        out DateTime wateredAt,
+        out string? error)
     {
-        var raw = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                  ?? User.FindFirstValue("sub");
-        return int.TryParse(raw, out var id) ? id : null;
+        var now = DateTime.UtcNow;
+        wateredAt = now;
+        error = null;
+
+        if (!requested.HasValue)
+            return true;
+
+        var candidate = requested.Value.Kind == DateTimeKind.Local
+            ? requested.Value.ToUniversalTime()
+            : DateTime.SpecifyKind(requested.Value, DateTimeKind.Utc);
+
+        if (candidate > now.AddMinutes(1))
+        {
+            error = "WateredAt cannot be in the future.";
+            return false;
+        }
+
+        if (candidate.Date < plantedAt.Date)
+        {
+            error = "WateredAt cannot be before the batch was planted.";
+            return false;
+        }
+
+        wateredAt = candidate;
+        return true;
     }
 }

@@ -28,7 +28,7 @@ Edit the connection string placeholder in `backend/appsettings.json`:
 }
 ```
 
-Replace `YOUR_PASSWORD` with your local MySQL root (or app user) password.
+Replace `YOUR_PASSWORD` with your local MySQL root (or app user) password. The `Development` environment also reads `backend/appsettings.Development.json`, which is the right place for a local password so it is not the production-shaped default.
 
 ### 2. Apply migrations (and seed)
 
@@ -57,7 +57,7 @@ dotnet run --launch-profile http
 
 - HTTP: **http://localhost:5247** (Swagger at `/swagger`)
 - HTTPS profile: **https://localhost:7031**
-- CORS allows Vite origin `http://localhost:5173`
+- CORS allows Vite origin `http://localhost:5173` in Development
 
 **Seed accounts:**
 

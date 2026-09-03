@@ -1,0 +1,68 @@
+---
+description: Backend .NET 8 coding standards — controllers, services, EF Core, API, security
+globs: backend/**
+alwaysApply: false
+---
+
+# Backend .NET 8 Coding Rules
+
+## General
+
+- Write clean, readable, maintainable, simple C# for .NET 8. Prefer simple solutions.
+- Follow existing architecture (`Controllers`, `Services`, `Dtos`, `Data`, `Models`). Reuse existing services, DTOs, helpers, and config.
+- Do not change unrelated code. Do not add patterns, packages, or layers without a clear reason.
+
+## Naming
+
+- `PascalCase` for classes, interfaces, methods, properties, enums, and public members.
+- `camelCase` for locals, parameters, and private fields matching project style (`_db`, `_watering`).
+- Interfaces start with `I` (`IUserService`). Async methods end with `Async` (`GetUserAsync`).
+- Booleans: `Is`, `Has`, `Can`, `Should`. Avoid vague names (`data`, `obj`, `temp`, `result`) when a specific name exists.
+
+## Controllers and services
+
+- Keep controllers thin: HTTP, binding, validation coordination, call services, return status codes.
+- Put business rules in services (`SaleReadinessService`, `WateringScheduleService`). Reuse them before adding new services.
+- Each class has one focused responsibility. Prefer composition over unused inheritance.
+- Do not add an interface for every small class unless DI/testing in this project already requires it.
+
+## HTTP and DTOs
+
+- Use the right verb: GET/POST/PUT/PATCH/DELETE. Return real status codes, not 200 for everything.
+- Typical: `200` retrieve/update, `201` create, `204` delete, `400` invalid, `401` unauthenticated, `403` forbidden, `404` missing, `409` conflict. Do not use `500` for expected business errors.
+- Follow existing anonymous/`{ message }` and DTO response shapes. Do not expose entities when DTOs exist (`ApiDtos.cs`). Reuse DTOs; do not duplicate nearly identical records.
+- Never return stack traces, EF errors, or internal exceptions to clients.
+
+## DI, async, EF Core
+
+- Constructor-inject via built-in DI. Do not `new` services that DI owns. No service locator.
+- Lifetimes: `Scoped` for app services and `DbContext`, `Transient` for lightweight stateless types, `Singleton` only if thread-safe. Never inject scoped into singleton.
+- Use `async`/`await` for I/O. Never `.Result` / `.Wait()`. Pass `CancellationToken`. No `Task.Run` for I/O. No fake-async wrappers.
+- Reuse `AppDbContext`. Use async EF methods. `AsNoTracking()` for read-only. Filter in SQL, not after `ToList()`. Avoid extra `Include()`; prefer `Select` projections. Do not query inside loops. Paginate large lists when needed.
+
+## Validation, errors, logging
+
+- Validate on the server (`[Required]`, `[Range]`, enum parse). Do not trust the frontend.
+- Do not use exceptions for normal flow. No empty `catch`. Follow existing seed/startup logging; do not invent a new global handler unless asked.
+- Use `ILogger<T>`. Never log passwords, tokens, JWT, or connection strings. Use Debug/Information/Warning/Error/Critical appropriately.
+
+## Auth, config, schema
+
+- Enforce `[Authorize]` / roles on the API. Do not rely on the UI. Never hard-code JWT keys, passwords, or connection strings; use config / env / user-secrets.
+- Keep secrets out of non-Development `appsettings`. JWT fail-fast if the key is missing/short.
+- Follow existing EF migrations. Understand relationships and callers before rename/drop. Use transactions only when multiple writes must be atomic; keep them short.
+
+## Security and performance
+
+- Parameterize any raw SQL. Do not trust client-supplied user ids, roles, or permissions. Do not expose extra DB fields.
+- Correctness first. Do not add caching or indexes without understanding the bottleneck. Reuse `IHttpClientFactory` if HTTP clients appear; never `new HttpClient()` per request.
+
+## Comments, tests, process
+
+- Comments in English, explain **why**. No obvious or leftover TODO comments.
+- Prefer tests for important business rules and observable behavior when the project has tests.
+- Bugs: find root cause, smallest fix, no unrelated refactor. Ask only when behavior is genuinely ambiguous. Do not add architecture, libraries, or NuGet packages without confirmation.
+
+## After changing code
+
+Check compile, nullable warnings, unused usings, duplication, status codes, authorization, queries, and that unrelated files were not touched. Keep the solution simple.

@@ -26,7 +26,7 @@ public class AppDbContext : DbContext
 
         modelBuilder.Entity<PlantSpecies>(e =>
         {
-            e.HasIndex(s => s.Name);
+            e.HasIndex(s => s.Name).IsUnique();
         });
 
         modelBuilder.Entity<Batch>(e =>

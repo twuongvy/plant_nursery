@@ -20,7 +20,14 @@ public class SaleReadinessService
 
     public SaleReadinessResult Evaluate(Batch batch, DateTime? asOfUtc = null)
     {
+        var watering = _wateringSchedule.Evaluate(batch, asOfUtc);
+        return Evaluate(batch, watering, asOfUtc);
+    }
+
+    public SaleReadinessResult Evaluate(Batch batch, WateringScheduleInfo watering, DateTime? asOfUtc = null)
+    {
         ArgumentNullException.ThrowIfNull(batch);
+        ArgumentNullException.ThrowIfNull(watering);
         if (batch.PlantSpecies is null)
             throw new InvalidOperationException("Batch.PlantSpecies must be loaded.");
 
@@ -34,7 +41,6 @@ public class SaleReadinessService
         if (batch.HealthStatus != HealthStatus.Healthy)
             failures.Add($"HealthStatus is {batch.HealthStatus}; must be Healthy.");
 
-        var watering = _wateringSchedule.Evaluate(batch, asOf);
         if (watering.IsOverdue)
             failures.Add($"Watering overdue by {watering.DaysOverdue} day(s). Next due was {watering.NextDueAt:yyyy-MM-dd}.");
 
